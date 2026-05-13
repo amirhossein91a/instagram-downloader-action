@@ -155,7 +155,7 @@ jobs:
           echo "📝 Post: ${POST_CODE:-N/A}"
           echo "📋 Kind: $CONTENT_KIND"
 
-          if [ "$CONTENT_TYPE" != "caption_only" ] && [ "$CONTENT_KIND" != "profile" ]; then
+          if [ "$CONTENT_TYPE" != "caption_only" ]; then
             echo "🎬 Downloading media (max: $MAX_POSTS posts)..."
             TMP_DIR="/tmp/ig_tmp_$$"
             mkdir -p "$TMP_DIR"
