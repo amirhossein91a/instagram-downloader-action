@@ -1,0 +1,185 @@
+{
+  "general": {
+    "default_max_posts": 20,
+    "default_content_type": "all",
+    "default_download_media": false,
+    "auto_run_interval_hours": 6,
+    "enable_notifications": false,
+    "output_formats": ["markdown"],
+    "timezone": "Asia/Tehran",
+    "calendar_type": "jalali",
+    "language": "fa"
+  },
+  
+  "scraping": {
+    "scroll_delay_seconds": 2,
+    "max_scroll_attempts": 50,
+    "wait_for_selector_timeout": 10000,
+    "navigation_timeout": 30000,
+    "headless_mode": true,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "viewport_width": 1280,
+    "viewport_height": 720
+  },
+  
+  "media": {
+    "download_media": false,
+    "max_file_size_mb": 50,
+    "allowed_image_formats": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"],
+    "allowed_audio_formats": [".mp3", ".flac", ".ogg", ".m4a", ".wav", ".aac"],
+    "allowed_video_formats": [".mp4", ".mkv", ".avi", ".mov", ".webm", ".flv"],
+    "extract_metadata": true,
+    "create_thumbnails": false,
+    "thumbnail_size": [150, 150],
+    "organize_by_channel": true,
+    "organize_by_date": true,
+    "date_folder_format": "%Y/%m"
+  },
+  
+  "filters": {
+    "content_types": {
+      "all": true,
+      "music": true,
+      "photo": true,
+      "video": true,
+      "text": true,
+      "voice": false,
+      "video_note": false,
+      "poll": false,
+      "sticker": false
+    },
+    "exclude_patterns": [],
+    "include_patterns": [],
+    "exclude_hashtags": [],
+    "include_hashtags": [],
+    "min_text_length": 0,
+    "max_text_length": 0,
+    "date_from": "",
+    "date_to": "",
+    "exclude_reposts": false,
+    "exclude_forwarded": false,
+    "exclude_edited": false
+  },
+  
+  "output": {
+    "markdown": {
+      "enabled": true,
+      "file_path": "telegram_output.md",
+      "include_toc": true,
+      "include_metadata_table": true,
+      "right_to_left": true,
+      "font_family": "Vazirmatn, Tahoma, Arial",
+      "rtl_font_size": "14px",
+      "max_image_width": 800,
+      "embed_videos": false,
+      "show_emojis": true,
+      "persian_numbers": true
+    },
+    "json": {
+      "enabled": false,
+      "file_path": "telegram_output.json",
+      "pretty_print": true,
+      "ensure_ascii": false,
+      "include_raw_html": false,
+      "include_timestamps": true
+    },
+    "html": {
+      "enabled": false,
+      "file_path": "telegram_output.html",
+      "template": "default",
+      "responsive": true,
+      "dark_mode": false
+    },
+    "csv": {
+      "enabled": false,
+      "file_path": "telegram_output.csv",
+      "delimiter": ",",
+      "include_headers": true,
+      "fields": ["id", "date", "type", "text", "media_url", "channel"]
+    }
+  },
+  
+  "performance": {
+    "max_retries": 5,
+    "retry_delay_seconds": 3,
+    "timeout_seconds": 30,
+    "concurrent_downloads": 3,
+    "batch_size": 10,
+    "memory_limit_mb": 512,
+    "cpu_limit_percent": 80,
+    "cache_enabled": true,
+    "cache_ttl_hours": 24
+  },
+  
+  "channels": {
+    "sources_file": "telegram/channels.json",
+    "last_ids_file": "telegram/last_ids.json",
+    "content_directory": "telegram/content",
+    "backup_channels_list": true,
+    "max_channels_per_run": 0,
+    "channel_blacklist": [],
+    "channel_whitelist": []
+  },
+  
+  "logging": {
+    "log_level": "INFO",
+    "log_to_file": true,
+    "log_file_path": "telegram/archiver.log",
+    "log_rotation": true,
+    "max_log_files": 5,
+    "max_log_size_mb": 10,
+    "show_progress_bar": true,
+    "verbose_output": false
+  },
+  
+  "notifications": {
+    "enabled": false,
+    "on_success": false,
+    "on_failure": true,
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
+    "email_enabled": false,
+    "smtp_server": "",
+    "smtp_port": 587,
+    "email_from": "",
+    "email_to": "",
+    "webhook_url": ""
+  },
+  
+  "advanced": {
+    "use_playwright_stealth": true,
+    "random_delay_between_requests": true,
+    "min_random_delay": 1,
+    "max_random_delay": 3,
+    "rotate_user_agents": false,
+    "use_proxy": false,
+    "proxy_url": "",
+    "proxy_username": "",
+    "proxy_password": "",
+    "save_cookies": true,
+    "cookies_file": "telegram/cookies.json",
+    "bypass_cloudflare": true,
+    "use_redis_cache": false,
+    "redis_url": "redis://localhost:6379"
+  },
+  
+  "scheduling": {
+    "auto_run_enabled": true,
+    "cron_expression": "0 */6 * * *",
+    "max_runtime_minutes": 30,
+    "skip_if_no_changes": true,
+    "run_on_push": false,
+    "timezone": "Asia/Tehran",
+    "disable_on_weekends": false,
+    "disable_hours": []
+  },
+  
+  "backup": {
+    "enabled": true,
+    "backup_before_update": true,
+    "max_backups": 10,
+    "backup_directory": "telegram/backups",
+    "compress_backups": true,
+    "include_media_in_backup": false
+  }
+}
