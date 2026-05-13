@@ -1,0 +1,118 @@
+name: Telegram Advanced Archiver
+
+on:
+  schedule:
+    # اجرای خودکار هر 6 ساعت (برای جلوگیری از مصرف بالا)
+    - cron: "0 */6 * * *"
+  
+  workflow_dispatch:
+    inputs:
+      channel_id:
+        description: 'نام کانال (بدون @) - خالی بذار برای همه کانال‌ها'
+        required: false
+        type: string
+        default: ''
+      
+      max_posts:
+        description: 'تعداد پست‌های اخیر (پیش‌فرض: 20، همه: 0)'
+        required: false
+        type: number
+        default: 20
+      
+      content_type:
+        description: 'نوع محتوا (all, music, photo, video, text)'
+        required: false
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - music
+          - photo
+          - video
+          - text
+      
+      download_media:
+        description: 'دانلود فایل‌ها (true/false)'
+        required: false
+        type: boolean
+        default: false
+      
+      output_format:
+        description: 'فرمت خروجی (markdown, json, both)'
+        required: false
+        type: choice
+        default: 'markdown'
+        options:
+          - markdown
+          - json
+          - both
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # جلوگیری از اجرای طولانی
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Cache Chromium
+        id: cache-chromium
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+      
+      - name: Install dependencies
+        run: |
+          pip install playwright requests jdatetime pillow mutagen
+          python -m playwright install chromium --with-deps
+      
+      - name: Run advanced archiver
+        env:
+          CHANNEL_ID: ${{ github.event.inputs.channel_id || '' }}
+          MAX_POSTS: ${{ github.event.inputs.max_posts || '20' }}
+          CONTENT_TYPE: ${{ github.event.inputs.content_type || 'all' }}
+          DOWNLOAD_MEDIA: ${{ github.event.inputs.download_media || 'false' }}
+          OUTPUT_FORMAT: ${{ github.event.inputs.output_format || 'markdown' }}
+        run: |
+          python .github/script/telegram_archiver.py \
+            --channel "$CHANNEL_ID" \
+            --max-posts "$MAX_POSTS" \
+            --content-type "$CONTENT_TYPE" \
+            --download-media "$DOWNLOAD_MEDIA" \
+            --output-format "$OUTPUT_FORMAT"
+      
+      - name: Commit and push
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # فقط در صورت وجود تغییرات commit بزن
+          if [ -f "telegram_output.md" ] || [ -f "telegram_output.json" ]; then
+            git add telegram_output.md telegram_output.json telegram/content/ 2>/dev/null || true
+            
+            if ! git diff --staged --quiet; then
+              git commit -m "Update: Telegram archive [skip ci]"
+              git pull --rebase origin ${{ github.ref_name }} || true
+              git push origin ${{ github.ref_name }}
+            fi
+          fi
+      
+      - name: Upload artifacts (برای دانلود دستی)
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-archive
+          path: |
+            telegram_output.*
+            telegram/content/
+          retention-days: 7
