@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Telegram Channel Archiver - Working Version
+Telegram Channel Archiver - Final Working Version
 """
 
 import asyncio
@@ -26,7 +26,6 @@ class Config:
         self.output_md = "telegram_output.md"
         self.output_json = "telegram_output.json"
         
-        # تنظیمات از environment variables
         self.channel_id = os.getenv("CHANNEL_ID", "")
         self.max_posts = int(os.getenv("MAX_POSTS", "20"))
         self.content_type = os.getenv("CONTENT_TYPE", "all")
@@ -37,7 +36,6 @@ config = Config()
 
 # ========== تشخیص نوع محتوا ==========
 def detect_content_type(text: str, file_url: str = "") -> str:
-    """تشخیص نوع محتوا بر اساس متن و URL"""
     text_lower = text.lower()
     file_lower = file_url.lower()
     
@@ -59,14 +57,12 @@ def detect_content_type(text: str, file_url: str = "") -> str:
     return "text"
 
 def should_include_post(content_type: str) -> bool:
-    """بررسی آیا پست بر اساس فیلتر نوع محتوا باید ذخیره شود"""
     if config.content_type == "all":
         return True
     return content_type == config.content_type
 
 # ========== دانلود فایل ==========
 async def download_file(url: str, channel_name: str, post_id: str, file_type: str) -> Optional[str]:
-    """دانلود فایل با قابلیت قطع و ادامه"""
     if not config.download_media:
         return url
     
@@ -97,7 +93,6 @@ async def download_file(url: str, channel_name: str, post_id: str, file_type: st
 
 # ========== خروجی Markdown ==========
 async def save_markdown(posts: List[Dict], channel_name: str = ""):
-    """ذخیره در فایل Markdown با فرمت زیبا"""
     with open(config.output_md, 'w', encoding='utf-8') as f:
         f.write(f"# 📡 آرشیو تلگرام\n\n")
         if channel_name and channel_name != "all_channels":
@@ -134,7 +129,6 @@ async def save_markdown(posts: List[Dict], channel_name: str = ""):
 
 # ========== خروجی JSON ==========
 async def save_json(posts: List[Dict], channel_name: str = ""):
-    """ذخیره در فایل JSON"""
     output = {
         "metadata": {
             "channel": channel_name,
@@ -150,27 +144,21 @@ async def save_json(posts: List[Dict], channel_name: str = ""):
 
 # ========== استخراج پست‌ها ==========
 async def extract_posts(page, channel_name: str) -> List[Dict]:
-    """استخراج پست‌ها از صفحه جاری"""
-    # اجرای جاوااسکریپت در مرورگر
     posts_data = await page.evaluate('''
         () => {
             const posts = [];
             const messageElements = document.querySelectorAll('.tgme_widget_message');
             
             for (const msg of messageElements) {
-                // گرفتن ID پست
                 const postLink = msg.querySelector('.tgme_widget_message_link');
                 const postId = postLink ? postLink.getAttribute('href')?.split('/').pop() : null;
                 
-                // گرفتن متن
                 const textElem = msg.querySelector('.tgme_widget_message_text');
                 const text = textElem ? textElem.innerText : '';
                 
-                // گرفتن زمان
                 const timeElem = msg.querySelector('time');
                 const datetime = timeElem ? timeElem.getAttribute('datetime') : new Date().toISOString();
                 
-                // گرفتن مدیا
                 let mediaUrl = '';
                 const photoElem = msg.querySelector('.tgme_widget_message_photo img');
                 const videoElem = msg.querySelector('video');
@@ -195,19 +183,15 @@ async def extract_posts(page, channel_name: str) -> List[Dict]:
         }
     ''')
     
-    # پردازش پست‌ها
     processed_posts = []
     for post in posts_data:
         try:
-            # تبدیل زمان
             utc_time = datetime.fromisoformat(post['datetime'].replace('Z', '+00:00'))
             tehran_time = utc_time.replace(tzinfo=timezone.utc).astimezone()
             j_date = jdatetime.fromgregorian(datetime=tehran_time)
             
-            # تشخیص نوع محتوا
             content_type = detect_content_type(post['text'], post['mediaUrl'])
             
-            # دانلود مدیا
             media_path = None
             if post['mediaUrl']:
                 media_path = await download_file(
@@ -235,7 +219,6 @@ async def extract_posts(page, channel_name: str) -> List[Dict]:
 
 # ========== اسکرپ کانال ==========
 async def scrape_channel(channel_name: str) -> List[Dict]:
-    """اسکرپ کانال تلگرام"""
     print(f"\n🚀 شروع اسکرپ کانال: @{channel_name}")
     
     async with async_playwright() as p:
@@ -245,21 +228,16 @@ async def scrape_channel(channel_name: str) -> List[Dict]:
         url = f"https://t.me/s/{channel_name}"
         print(f"  🌐 باز کردن: {url}")
         await page.goto(url, wait_until="networkidle")
-        
-        # منتظر بارگذاری محتوا
         await page.wait_for_timeout(3000)
         
-        # اسکرول و جمع‌آوری پست‌ها
         all_posts = []
         seen_ids = set()
         scroll_count = 0
         max_scroll = min(20, config.max_posts // 5 + 5) if config.max_posts > 0 else 20
         
         while len(all_posts) < config.max_posts and scroll_count < max_scroll:
-            # استخراج پست‌های صفحه فعلی
             posts = await extract_posts(page, channel_name)
             
-            # اضافه کردن پست‌های جدید
             new_posts = 0
             for post in posts:
                 if post['id'] not in seen_ids:
@@ -272,14 +250,12 @@ async def scrape_channel(channel_name: str) -> List[Dict]:
             if len(all_posts) >= config.max_posts:
                 break
             
-            # اسکرول به پایین
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(2000)
             scroll_count += 1
         
         await browser.close()
         
-        # فیلتر بر اساس نوع محتوا
         filtered_posts = [p for p in all_posts if should_include_post(p['type'])]
         
         if config.max_posts > 0:
@@ -295,11 +271,15 @@ async def main():
     parser.add_argument('--max-posts', type=int, default=None, help='تعداد پست‌ها')
     parser.add_argument('--content-type', choices=['all', 'music', 'photo', 'video', 'text'], 
                        default=None, help='نوع محتوا')
-    parser.add_argument('--download-media', type=str, default='false', help='دانلود فایل‌ها')
+    parser.add_argument('--download-media', type=str, default='false', help='دانلود فایل‌ها (true/false)')
     parser.add_argument('--output-format', choices=['markdown', 'json', 'both'], 
                        default=None, help='فرمت خروجی')
     
     args = parser.parse_args()
+    
+    # مقدار پیش‌فرض برای download-media اگه خالی بود
+    if not args.download_media or args.download_media == '':
+        args.download_media = 'false'
     
     # اعمال آرگومان‌ها
     if args.channel:
@@ -310,6 +290,8 @@ async def main():
         config.content_type = args.content_type
     if args.download_media == 'true':
         config.download_media = True
+    else:
+        config.download_media = False
     if args.output_format:
         config.output_format = args.output_format
     
