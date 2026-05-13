@@ -84,7 +84,7 @@ jobs:
           DOWNLOAD_MEDIA: ${{ github.event.inputs.download_media || 'false' }}
           OUTPUT_FORMAT: ${{ github.event.inputs.output_format || 'markdown' }}
         run: |
-          python .github/script/telegram_archiver.py \
+          python .github/workflows/script/telegram_archiver.py \
             --channel "$CHANNEL_ID" \
             --max-posts "$MAX_POSTS" \
             --content-type "$CONTENT_TYPE" \
