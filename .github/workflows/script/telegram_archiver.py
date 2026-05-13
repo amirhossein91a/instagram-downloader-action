@@ -295,7 +295,7 @@ async def main():
     parser.add_argument('--max-posts', type=int, default=None, help='تعداد پست‌ها')
     parser.add_argument('--content-type', choices=['all', 'music', 'photo', 'video', 'text'], 
                        default=None, help='نوع محتوا')
-    parser.add_argument('--download-media', action='store_true', help='دانلود فایل‌ها')
+    parser.add_argument('--download-media', type=str, default='false', help='دانلود فایل‌ها')
     parser.add_argument('--output-format', choices=['markdown', 'json', 'both'], 
                        default=None, help='فرمت خروجی')
     
@@ -308,7 +308,7 @@ async def main():
         config.max_posts = args.max_posts
     if args.content_type:
         config.content_type = args.content_type
-    if args.download_media:
+    if args.download_media == 'true':
         config.download_media = True
     if args.output_format:
         config.output_format = args.output_format
