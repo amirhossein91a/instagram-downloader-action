@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300">
+  <defs>
+    <style>
+      @import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+      text {
+        font-family: 'Vazirmatn', sans-serif;
+      }
+    </style>
+    
+    <!-- پس‌زمینه -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0D1117;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#161B22;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- گرادینت اینستاگرامی -->
+    <linearGradient id="insta" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#833AB4;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#FD1D1D;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FCB045;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- گرادینت برای متن -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#E6EDF3;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C9D1D9;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- پس‌زمینه -->
+  <rect width="960" height="300" rx="20" fill="url(#bg)" />
+
+  <!-- دایره‌های تزئینی محو -->
+  <circle cx="90" cy="70" r="140" fill="url(#insta)" opacity="0.08" />
+  <circle cx="850" cy="230" r="110" fill="url(#insta)" opacity="0.05" />
+  <circle cx="480" cy="260" r="80" fill="url(#insta)" opacity="0.04" />
+
+  <!-- آیکون اینستاگرام -->
+  <g transform="translate(810, 150)">
+    <!-- دوربین -->
+    <rect x="-48" y="-36" width="96" height="72" rx="20" fill="none" stroke="url(#insta)" stroke-width="4" />
+    <circle cx="0" cy="0" r="18" fill="none" stroke="url(#insta)" stroke-width="4" />
+    <circle cx="0" cy="0" r="6" fill="url(#insta)" />
+    <!-- فلش -->
+    <circle cx="36" cy="-24" r="4" fill="url(#insta)" />
+  </g>
+
+  <!-- عنوان فارسی -->
+  <text x="730" y="80" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="900" font-size="38" fill="url(#textGrad)" text-anchor="end">
+    دانلودر اینستاگرام
+  </text>
+
+  <!-- عنوان انگلیسی -->
+  <text x="730" y="125" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="800" font-size="32" fill="url(#insta)" text-anchor="end">
+    Instagram Downloader
+  </text>
+
+  <!-- خط جداکننده -->
+  <line x1="320" y1="150" x2="730" y2="150" stroke="url(#insta)" stroke-width="3" opacity="0.7" stroke-linecap="round" />
+
+  <!-- توضیح کوتاه -->
+  <text x="730" y="180" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="400" font-size="17" fill="#8B949E" text-anchor="end">
+    دانلود پست، ریلز، استوری و IGTV با قدرت GitHub Actions
+  </text>
+
+  <!-- شعار -->
+  <text x="730" y="205" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="300" font-size="14" fill="#6E7681" text-anchor="end">
+    بدون لاگین • کاملاً رایگان • بدون نیاز به هیچ ابزاری
+  </text>
+
+  <!-- تگ‌ها -->
+  <rect x="610" y="225" width="120" height="26" rx="13" fill="url(#insta)" opacity="0.15" />
+  <text x="670" y="243" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="500" font-size="12" fill="url(#insta)" text-anchor="middle">
+    بدون لاگین
+  </text>
+
+  <rect x="480" y="225" width="120" height="26" rx="13" fill="url(#insta)" opacity="0.15" />
+  <text x="540" y="243" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="500" font-size="12" fill="url(#insta)" text-anchor="middle">
+    بدون هزینه
+  </text>
+
+  <rect x="340" y="225" width="130" height="26" rx="13" fill="url(#insta)" opacity="0.15" />
+  <text x="405" y="243" font-family="'Vazirmatn', 'Segoe UI', 'Tahoma', 'Arial', sans-serif" font-weight="500" font-size="12" fill="url(#insta)" text-anchor="middle">
+    GitHub Actions
+  </text>
+
+  <!-- خط رنگی پایین -->
+  <rect x="0" y="290" width="960" height="10" fill="url(#insta)" opacity="0.4" rx="5" />
+</svg>
