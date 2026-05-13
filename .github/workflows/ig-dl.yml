@@ -1,6 +1,6 @@
 # ============================================================
-# ig-dl.yml — Instagram Downloader with Post Limit
-# V2.2
+# ig-dl.yml — Instagram Downloader (Hybrid Engine)
+# V3.0 - gallery-dl + yt-dlp fallback
 # ============================================================
 
 name: "📸 Instagram Downloader"
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       instagram_link:
-        description: "🔗 لینک پست/ریلز/استوری/IGTV اینستاگرام (مثال: https://www.instagram.com/p/CODE یا https://www.instagram.com/username)"
+        description: "🔗 لینک اینستاگرام (پست/ریلز/استوری/پروفایل)"
         required: true
         type: string
       content_type:
@@ -25,7 +25,7 @@ on:
           - profile
           - caption_only
       max_posts:
-        description: "🔢 حداکثر تعداد پست (برای پروفایل یا هشتگ)"
+        description: "🔢 حداکثر تعداد پست (برای پروفایل)"
         required: false
         type: number
         default: 5
@@ -35,7 +35,7 @@ on:
         type: boolean
         default: true
       download_metadata:
-        description: "📊 دانلود metadata (لایک، کامنت، هشتگ)"
+        description: "📊 دانلود metadata"
         required: false
         type: boolean
         default: true
@@ -52,9 +52,6 @@ jobs:
   download:
     name: "📥 Download & Store"
     runs-on: ubuntu-latest
-    container:
-      image: khashayardev/bale-yt-downloader:latest
-      options: --privileged
     timeout-minutes: 120
     permissions:
       contents: write
@@ -66,36 +63,47 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
-          filter: blob:none
 
       - name: "⚙️ Configure Git"
         run: |
-          git config --global http.postBuffer 524288000
-          git config --global http.maxRequestBuffer 100M
-          git config --global core.compression 0
-          git config --global pack.windowMemory 256m
-          git config --global pack.packSizeLimit 100m
-          git config --global pack.threads 1
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global http.postBuffer 524288000
         shell: bash
 
-      - name: "🌐 Setup Connection (warp-cli)"
+      - name: "📦 Install Tools"
         run: |
-          echo "🔄 Starting warp-cli..."
-          warp-cli register 2>/dev/null || true
-          warp-cli connect 2>/dev/null || true
-          sleep 10
-          echo "✅ warp-cli connected (direct mode)"
+          # Install system dependencies
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq ffmpeg python3-pip
 
-      - name: "📦 Verify Dependencies"
-        run: |
-          echo "✅ Pre-installed in Docker image"
+          # Install gallery-dl (primary Instagram tool)
+          pip install gallery-dl yt-dlp
+
+          # Ensure yt-dlp is latest
+          if ! command -v yt-dlp &> /dev/null; then
+            curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+            chmod a+rx /usr/local/bin/yt-dlp
+          fi
+
+          echo "✅ Tools installed:"
+          gallery-dl --version
           yt-dlp --version
           python3 --version
-          jq --version
 
-      - name: "🔧 Setup Download Parameters"
+      - name: "🍪 Setup Cookies (if available)"
+        shell: bash
+        run: |
+          if [ -n "$INSTAGRAM_COOKIES" ]; then
+            echo "$INSTAGRAM_COOKIES" > /tmp/instagram-cookies.txt
+            echo "✅ Cookies loaded (will use as last resort)"
+          else
+            echo "ℹ️ No cookies found – continuing without login"
+          fi
+        env:
+          INSTAGRAM_COOKIES: ${{ secrets.INSTAGRAM_COOKIES }}
+
+      - name: "🔧 Setup Parameters"
         id: setup
         shell: bash
         run: |
@@ -113,12 +121,11 @@ jobs:
           echo "IG_LINK=$IG_LINK" >> $GITHUB_ENV
           echo "CONTENT_TYPE=$CONTENT_TYPE" >> $GITHUB_ENV
           echo "MAX_POSTS=$MAX_POSTS" >> $GITHUB_ENV
-          echo "BACKUP_DIR=/tmp/ig_downloads_$$" >> $GITHUB_ENV
-          
-          mkdir -p /tmp/ig_downloads_$$
+          echo "DOWNLOAD_DIR=/tmp/ig_downloads" >> $GITHUB_ENV
+          mkdir -p /tmp/ig_downloads
           echo "✅ Setup complete"
 
-      - name: "⬇️ Download Instagram Content"
+      - name: "⬇️ Download Content (gallery-dl + yt-dlp)"
         id: download
         shell: bash
         run: |
@@ -128,8 +135,9 @@ jobs:
           IG_LINK="${{ env.IG_LINK }}"
           CONTENT_TYPE="${{ env.CONTENT_TYPE }}"
           MAX_POSTS="${{ env.MAX_POSTS }}"
-          BACKUP_DIR="${{ env.BACKUP_DIR }}"
+          DOWNLOAD_DIR="${{ env.DOWNLOAD_DIR }}"
           
+          # Helper functions
           sanitize_name() {
             local name="$1"
             name=$(echo "$name" | LC_ALL=C tr '[:space:]' '-' | LC_ALL=C tr -c 'a-zA-Z0-9_-' '-' | tr -s '-' | sed 's/^-//;s/-$//')
@@ -137,10 +145,7 @@ jobs:
             echo "$name"
           }
           
-          urlencode() {
-            python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1"
-          }
-          
+          # Extract username and post info from link
           if echo "$IG_LINK" | grep -qE '/p/|/reel/|/tv/|/stories/'; then
             USERNAME=$(echo "$IG_LINK" | grep -oP 'instagram\.com/\K[^/]+' | head -1 || echo "unknown")
             POST_CODE=$(echo "$IG_LINK" | grep -oP '/(p|reel|tv|stories)/\K[^/?]+' | head -1 || echo "")
@@ -155,175 +160,241 @@ jobs:
           echo "📝 Post: ${POST_CODE:-N/A}"
           echo "📋 Kind: $CONTENT_KIND"
 
+          # === MAIN DOWNLOAD PHASE ===
           if [ "$CONTENT_TYPE" != "caption_only" ]; then
-            echo "🎬 Downloading media (max: $MAX_POSTS posts)..."
-            TMP_DIR="/tmp/ig_tmp_$$"
-            mkdir -p "$TMP_DIR"
+            echo "🎬 Starting download (max: $MAX_POSTS posts)..."
             DOWNLOAD_SUCCESS=false
+            TMP_DIR="$DOWNLOAD_DIR/raw"
+            mkdir -p "$TMP_DIR"
             
-            for METHOD in 1 2 3 4 5 6 7 8; do
-              echo "  🔄 Method $METHOD..."
-              case $METHOD in
-                1) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --no-progress --retries 5 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                2) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" --no-progress --retries 5 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                3) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --user-agent "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36" --no-progress --retries 5 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                4) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --force-ipv4 --no-progress --retries 10 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                5) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --no-check-certificates --no-progress --retries 10 "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                6) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --extractor-args "instagram:include_thumbnail" --no-progress --retries 5 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                7) [ -f /tmp/youtube-cookies.txt ] && yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --cookies /tmp/youtube-cookies.txt --no-progress --retries 5 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-                8) yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" --max-downloads "$MAX_POSTS" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" --no-progress --retries 5 --no-check-certificates "$IG_LINK" 2>/dev/null && DOWNLOAD_SUCCESS=true ;;
-              esac
-              [ "$DOWNLOAD_SUCCESS" = true ] && break
-            done
+            # Prepare gallery-dl arguments
+            GALLERY_DL_ARGS="-d $TMP_DIR --no-part"
+            if [ "$CONTENT_KIND" = "profile" ] || [ "$CONTENT_KIND" = "stories" ]; then
+              GALLERY_DL_ARGS="$GALLERY_DL_ARGS -o 'page_url={{url}}'"
+            fi
             
+            # ===== ATTEMPT 1: gallery-dl (primary) =====
+            echo "  🔄 Attempt 1: gallery-dl (primary engine)"
+            set +e
+            gallery-dl $GALLERY_DL_ARGS "$IG_LINK" 2>/dev/null
+            exit_code=$?
+            set -e
+            if [ $exit_code -eq 0 ]; then
+              DOWNLOAD_SUCCESS=true
+              echo "  ✅ gallery-dl succeeded"
+            else
+              echo "  ⚠️ gallery-dl failed (exit code: $exit_code)"
+            fi
+            
+            # ===== ATTEMPT 2: gallery-dl with cookies (if available) =====
+            if [ "$DOWNLOAD_SUCCESS" = false ] && [ -f "/tmp/instagram-cookies.txt" ]; then
+              echo "  🔄 Attempt 2: gallery-dl with cookies"
+              set +e
+              gallery-dl --cookies /tmp/instagram-cookies.txt $GALLERY_DL_ARGS "$IG_LINK" 2>/dev/null
+              exit_code=$?
+              set -e
+              if [ $exit_code -eq 0 ]; then
+                DOWNLOAD_SUCCESS=true
+                echo "  ✅ gallery-dl with cookies succeeded"
+              else
+                echo "  ⚠️ gallery-dl with cookies failed"
+              fi
+            fi
+            
+            # ===== ATTEMPT 3: yt-dlp (fallback) =====
+            if [ "$DOWNLOAD_SUCCESS" = false ]; then
+              echo "  🔄 Attempt 3: yt-dlp (fallback engine)"
+              set +e
+              yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" \
+                --max-downloads "$MAX_POSTS" \
+                --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" \
+                --no-progress --retries 5 --no-check-certificates \
+                "$IG_LINK" 2>/dev/null
+              exit_code=$?
+              set -e
+              if [ $exit_code -eq 0 ]; then
+                DOWNLOAD_SUCCESS=true
+                echo "  ✅ yt-dlp succeeded"
+              else
+                echo "  ⚠️ yt-dlp failed"
+              fi
+            fi
+            
+            # ===== ATTEMPT 4: yt-dlp with cookies (last resort) =====
+            if [ "$DOWNLOAD_SUCCESS" = false ] && [ -f "/tmp/instagram-cookies.txt" ]; then
+              echo "  🔄 Attempt 4: yt-dlp with cookies (last resort)"
+              set +e
+              yt-dlp -o "${TMP_DIR}/%(title)s.%(ext)s" \
+                --max-downloads "$MAX_POSTS" \
+                --cookies /tmp/instagram-cookies.txt \
+                --user-agent "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" \
+                --no-progress --retries 5 --no-check-certificates \
+                "$IG_LINK" 2>/dev/null
+              exit_code=$?
+              set -e
+              if [ $exit_code -eq 0 ]; then
+                DOWNLOAD_SUCCESS=true
+                echo "  ✅ yt-dlp with cookies succeeded"
+              else
+                echo "  ⚠️ All download attempts failed"
+              fi
+            fi
+            
+            # ===== ORGANIZE FILES =====
             if [ "$DOWNLOAD_SUCCESS" = true ]; then
-              echo "✅ Downloaded!"
+              FOLDER_NAME=$(sanitize_name "${USERNAME}_${POST_CODE}_${CONTENT_KIND}")
+              FINAL_PATH="$DOWNLOAD_DIR/$FOLDER_NAME"
+              mkdir -p "$FINAL_PATH"
+              
+              # Move downloaded files
               FILE_COUNT=0
               for FILE in "$TMP_DIR"/*; do
                 [ -f "$FILE" ] || continue
                 BASENAME=$(basename "$FILE")
-                FOLDER_NAME=$(sanitize_name "${USERNAME}_${POST_CODE}_${CONTENT_KIND}")
-                FINAL_PATH="$BACKUP_DIR/$FOLDER_NAME"
-                mkdir -p "$FINAL_PATH"
                 cp "$FILE" "$FINAL_PATH/$BASENAME"
                 FILE_COUNT=$((FILE_COUNT + 1))
               done
+              
               echo "FILE_COUNT=$FILE_COUNT" >> $GITHUB_ENV
               echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
+              echo "  ✅ Downloaded $FILE_COUNT files"
             else
-              echo "⚠️ All 8 methods failed"
               echo "FILE_COUNT=0" >> $GITHUB_ENV
+              echo "  ❌ Download failed completely"
             fi
+            
             rm -rf "$TMP_DIR"
           fi
 
+          # === METADATA & CAPTION EXTRACTION ===
           if [ "${{ github.event.inputs.download_metadata }}" = "true" ] || [ "${{ github.event.inputs.download_caption }}" = "true" ]; then
             echo "📊 Extracting metadata..."
-            printf 'import json, os, re\nimport requests\nfrom bs4 import BeautifulSoup\n\nig_link = os.environ.get("IG_LINK", "")\nusername = os.environ.get("USERNAME", "unknown")\npost_code = os.environ.get("POST_CODE", "")\nbackup_dir = os.environ.get("BACKUP_DIR", "/tmp")\ndownload_caption = os.environ.get("DOWNLOAD_CAPTION", "true")\n\ndef sanitize(name):\n    name = re.sub(r"[\s|\\u3000]+", "-", name)\n    name = re.sub(r"[^a-zA-Z0-9_-]", "", name)\n    return name or "content"\n\nmeta = {}\ntry:\n    resp = requests.get(ig_link, headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"}, timeout=15)\n    soup = BeautifulSoup(resp.text, "html.parser")\n    og_title = soup.find("meta", property="og:title")\n    if og_title: meta["title"] = og_title.get("content", "")\n    og_desc = soup.find("meta", property="og:description")\n    if og_desc:\n        desc = og_desc.get("content", "")\n        likes_match = re.search(r"([\\d,]+)\\s*likes", desc)\n        if likes_match: meta["likes"] = likes_match.group(1).replace(",", "")\n        lines = desc.split("\\n")\n        caption_lines = []\n        found_likes = False\n        for line in lines:\n            if "likes" in line.lower() and not found_likes:\n                found_likes = True\n                continue\n            if found_likes and line.strip(): caption_lines.append(line.strip())\n        if caption_lines: meta["caption"] = "\\n".join(caption_lines)\n        hashtags = re.findall(r"#\\w+", desc)\n        if hashtags: meta["hashtags"] = list(set(hashtags))\n        mentions = re.findall(r"@\\w+", desc)\n        if mentions: meta["mentions"] = list(set(mentions))\n    meta["username"] = username\n    meta["post_code"] = post_code\n    meta["original_link"] = ig_link\n    folder_name = sanitize(f"{username}_{post_code}_p")\n    meta_path = os.path.join(backup_dir, folder_name, "metadata.json")\n    os.makedirs(os.path.dirname(meta_path), exist_ok=True)\n    with open(meta_path, "w", encoding="utf-8") as f:\n        json.dump(meta, f, indent=2, ensure_ascii=False)\n    print(f"  OK Metadata saved: {len(meta)} fields")\n    if download_caption == "true" and meta.get("caption"):\n        caption_path = os.path.join(backup_dir, folder_name, "caption.txt")\n        with open(caption_path, "w", encoding="utf-8") as f:\n            f.write(meta["caption"])\n        print("  OK Caption saved")\nexcept Exception as e:\n    print(f"  WARN Metadata failed: {e}")\n' > /tmp/ig_meta.py
+            mkdir -p "$DOWNLOAD_DIR/${USERNAME}_${POST_CODE}_${CONTENT_KIND}"
             
-            export IG_LINK="$IG_LINK"
-            export USERNAME="$USERNAME"
-            export POST_CODE="$POST_CODE"
-            export BACKUP_DIR="$BACKUP_DIR"
-            export DOWNLOAD_CAPTION="${{ github.event.inputs.download_caption }}"
-            python3 /tmp/ig_meta.py 2>/dev/null || true
+            python3 -c "
+import json, os, re
+import requests
+from bs4 import BeautifulSoup
+
+ig_link = '$IG_LINK'
+username = '$USERNAME'
+post_code = '$POST_CODE'
+download_dir = '$DOWNLOAD_DIR'
+content_kind = '$CONTENT_KIND'
+
+meta = {}
+try:
+    resp = requests.get(ig_link, headers={'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'}, timeout=15)
+    soup = BeautifulSoup(resp.text, 'html.parser')
+    og_title = soup.find('meta', property='og:title')
+    if og_title: meta['title'] = og_title.get('content', '')
+    og_desc = soup.find('meta', property='og:description')
+    if og_desc:
+        desc = og_desc.get('content', '')
+        likes_match = re.search(r'([\d,]+)\s*likes', desc)
+        if likes_match: meta['likes'] = likes_match.group(1).replace(',', '')
+        lines = desc.split('\n')
+        caption_lines = []
+        found_likes = False
+        for line in lines:
+            if 'likes' in line.lower() and not found_likes:
+                found_likes = True
+                continue
+            if found_likes and line.strip(): caption_lines.append(line.strip())
+        if caption_lines: meta['caption'] = '\n'.join(caption_lines)
+        hashtags = re.findall(r'#\w+', desc)
+        if hashtags: meta['hashtags'] = list(set(hashtags))
+    meta['username'] = username
+    meta['original_link'] = ig_link
+    
+    folder_name = f'{username}_{post_code}_{content_kind}'
+    meta_path = os.path.join(download_dir, folder_name, 'metadata.json')
+    os.makedirs(os.path.dirname(meta_path), exist_ok=True)
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+    print(f'  ✅ Metadata saved: {len(meta)} fields')
+    
+    if meta.get('caption'):
+        caption_path = os.path.join(download_dir, folder_name, 'caption.txt')
+        with open(caption_path, 'w', encoding='utf-8') as f:
+            f.write(meta['caption'])
+        print('  ✅ Caption saved')
+except Exception as e:
+    print(f'  ⚠️ Metadata failed: {e}')
+" 2>/dev/null || true
           fi
 
+          # === PROFILE PICTURE ===
           if [ "${{ github.event.inputs.download_profile_pic }}" = "true" ]; then
             echo "👤 Downloading profile picture..."
-            PROFILE_DIR="/tmp/ig_profile_$$"
-            mkdir -p "$PROFILE_DIR"
-            yt-dlp --skip-download --write-thumbnail -o "${PROFILE_DIR}/profile" --no-progress --no-check-certificates "https://www.instagram.com/${USERNAME}/" 2>/dev/null || true
-            if ls "$PROFILE_DIR"/profile.* 2>/dev/null | head -1; then
-              FOLDER_NAME=$(sanitize_name "${USERNAME}_profile")
-              FINAL_PATH="$BACKUP_DIR/$FOLDER_NAME"
-              mkdir -p "$FINAL_PATH"
-              cp "$PROFILE_DIR"/profile.* "$FINAL_PATH/profile_pic.jpg" 2>/dev/null || true
-              echo "  ✅ Profile picture saved"
-            fi
-            rm -rf "$PROFILE_DIR"
+            yt-dlp --skip-download --write-thumbnail \
+              -o "$DOWNLOAD_DIR/${USERNAME}_profile/profile_pic" \
+              --no-progress --no-check-certificates \
+              "https://www.instagram.com/${USERNAME}/" 2>/dev/null || true
           fi
 
-          FOLDER_NAME="${USERNAME}_${POST_CODE}_${CONTENT_KIND}"
-          FINAL_PATH="$BACKUP_DIR/$FOLDER_NAME"
-
-          if [ -d "$FINAL_PATH" ]; then
-            echo "📝 Creating README..."
-            FOLDER_ENCODED=$(urlencode "$FOLDER_NAME")
-            TYPE_EMOJI="📸"; TYPE_NAME="Post"
-            case $CONTENT_KIND in
-              reel) TYPE_EMOJI="🎥"; TYPE_NAME="Reel" ;;
-              tv) TYPE_EMOJI="📺"; TYPE_NAME="IGTV" ;;
-              stories) TYPE_EMOJI="⭕"; TYPE_NAME="Story" ;;
-            esac
-            
-            printf '%%s\n' "# ${TYPE_EMOJI} Instagram ${TYPE_NAME} by @${USERNAME}" "" "---" "" "## 📋 ${TYPE_NAME} Information" "" "| Property | Value |" "|----------|-------|" "| **Author** | [@${USERNAME}](https://instagram.com/${USERNAME}) |" "| **Original Link** | [View on Instagram](${IG_LINK}) |" "| **Type** | ${TYPE_EMOJI} ${TYPE_NAME} |" "| **Status** | ✅ Downloaded |" "" "---" "" "## 📥 Download" "" > "$FINAL_PATH/README.md"
-            
-            FILE_NUM=0
-            for FILE in "$FINAL_PATH"/*; do
-              [ -f "$FILE" ] || continue
-              BASENAME=$(basename "$FILE")
-              [ "$BASENAME" = "README.md" ] && continue
-              FILE_NUM=$((FILE_NUM + 1))
-              FILE_ENCODED=$(urlencode "$BASENAME")
-              SIZE=$(stat -c%s "$FILE")
-              SIZE_MB=$(echo "scale=1; $SIZE/1048576" | bc)
-              if [ $FILE_NUM -eq 1 ]; then
-                echo "| # | File | Size | Link |" >> "$FINAL_PATH/README.md"
-                echo "|---|------|------|------|" >> "$FINAL_PATH/README.md"
-              fi
-              echo "| $FILE_NUM | \`${BASENAME}\` | ${SIZE_MB} MB | [Download](https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/videos/${FOLDER_ENCODED}/${FILE_ENCODED}) |" >> "$FINAL_PATH/README.md"
-            done
-            printf '%%s\n' "" "---" "" "*Downloaded via GitHub Actions*" >> "$FINAL_PATH/README.md"
-            echo "  ✅ README created"
-          fi
-
-          TOTAL_FILES=$(find "$BACKUP_DIR" -type f ! -name "README.md" 2>/dev/null | wc -l)
+          # === SUMMARY ===
+          TOTAL_FILES=$(find "$DOWNLOAD_DIR" -type f ! -name "README.md" 2>/dev/null | wc -l)
           echo ""
           echo "════════════════════════════════════════════"
-          echo "  📊 Total files: $TOTAL_FILES"
+          echo "  📊 Total files downloaded: $TOTAL_FILES"
           echo "════════════════════════════════════════════"
           echo "TOTAL_FILES=$TOTAL_FILES" >> $GITHUB_ENV
-
-      - name: "🛑 Disconnect warp-cli"
-        if: always()
-        run: |
-          warp-cli disconnect 2>/dev/null || true
 
       - name: "📤 Push to Repository"
         id: push
         shell: bash
         run: |
-          cd $GITHUB_WORKSPACE
-          git config --global --add safe.directory $GITHUB_WORKSPACE
-          
-          BACKUP_DIR="${{ env.BACKUP_DIR }}"
-          BRANCH="main"
+          DOWNLOAD_DIR="${{ env.DOWNLOAD_DIR }}"
           TOTAL_FILES="${{ env.TOTAL_FILES }}"
           
-          if [ "$TOTAL_FILES" -eq 0 ] || [ ! -d "$BACKUP_DIR" ]; then
-            echo "⚠️ No files to push"; exit 0
+          if [ "$TOTAL_FILES" -eq 0 ]; then
+            echo "⚠️ No files to push"
+            exit 0
           fi
           
-          git fetch origin "$BRANCH" --quiet
-          git reset --hard origin/"$BRANCH" --quiet
+          git fetch origin main --quiet
+          git reset --hard origin/main --quiet
           mkdir -p videos
-          cp -r "$BACKUP_DIR"/* videos/ 2>/dev/null || true
+          cp -r "$DOWNLOAD_DIR"/* videos/ 2>/dev/null || true
           
-          echo "📝 Updating master videos list..."
+          # Update master README
           MASTER_README="videos/README.md"
-          printf '%%s\n' "# 🎬 Downloaded Instagram Content" "" "| # | User | Type | Content | Link |" "|---|------|------|---------|------|" > "$MASTER_README"
+          echo "# 🎬 Downloaded Instagram Content" > "$MASTER_README"
+          echo "" >> "$MASTER_README"
+          echo "| # | Folder | Link |" >> "$MASTER_README"
+          echo "|---|--------|------|" >> "$MASTER_README"
           
           NUM=0
           for folder in videos/*/; do
             [ -d "$folder" ] || continue
             FOLDER_NAME=$(basename "$folder")
-            [ -f "$folder/README.md" ] || continue
             NUM=$((NUM + 1))
-            AUTHOR=$(grep -oP '\[@\K[^]]+' "$folder/README.md" 2>/dev/null | head -1 || echo "unknown")
-            TYPE=$(grep -oP '📸|🎥|📺|⭕|👤' "$folder/README.md" 2>/dev/null | head -1 || echo "📦")
-            FOLDER_ENCODED=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$FOLDER_NAME" 2>/dev/null || echo "$FOLDER_NAME")
-            FOLDER_LINK="https://github.com/${GITHUB_REPOSITORY}/tree/main/videos/${FOLDER_ENCODED}"
-            echo "| $NUM | @$AUTHOR | $TYPE | $FOLDER_NAME | [View]($FOLDER_LINK) |" >> "$MASTER_README"
+            echo "| $NUM | $FOLDER_NAME | [View](https://github.com/${GITHUB_REPOSITORY}/tree/main/videos/$FOLDER_NAME) |" >> "$MASTER_README"
           done
-          echo "" >> "$MASTER_README"; echo "*Auto-generated list*" >> "$MASTER_README"
+          
           git add -f "$MASTER_README"
           git add -f videos/
           
-          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
-          git commit -m "📸 Instagram download [skip ci]" --quiet || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "📸 Instagram download [skip ci]" --quiet
           
           for i in $(seq 1 10); do
-            if timeout 120 git push --force origin HEAD:"$BRANCH" 2>&1; then
-              echo "✅ Pushed (attempt $i)"; break
+            if git push origin main; then
+              echo "✅ Pushed (attempt $i)"
+              break
             else
-              [ $i -ge 10 ] && echo "🚫 All push attempts failed" && exit 1
+              [ $i -ge 10 ] && echo "❌ Push failed" && exit 1
               sleep $((3 + RANDOM % 10))
-              git fetch origin "$BRANCH" --quiet
-              git reset --hard origin/"$BRANCH" --quiet
-              cp -r "$BACKUP_DIR"/* videos/ 2>/dev/null || true
+              git fetch origin main --quiet
+              git reset --hard origin/main --quiet
+              cp -r "$DOWNLOAD_DIR"/* videos/ 2>/dev/null || true
               git add -f videos/
-              git commit -m "📸 Retry push [skip ci]" --quiet || true
+              git commit -m "📸 Retry push [skip ci]" --quiet
             fi
           done
           
